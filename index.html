@@ -1,1 +1,97 @@
-initial motion sound
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>G-MODE Motion → Sound</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  background:#000;
+  color:#0f0;
+  font-family:Arial,Helvetica,sans-serif;
+  overflow:hidden;
+}
+#ui{
+  position:fixed;
+  bottom:10px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.7);
+  padding:10px 16px;
+  border-radius:12px;
+  font-size:14px;
+}
+video,canvas{display:none;}
+</style>
+</head>
+<body>
+
+<div id="ui">Camera + Move your hands</div>
+<video id="video" autoplay playsinline></video>
+<canvas id="c"></canvas>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+let audioCtx, osc, gain, filter;
+let lastFrame = null;
+
+navigator.mediaDevices.getUserMedia({ video:true }).then(stream=>{
+  video.srcObject = stream;
+  startAudio();
+});
+
+function startAudio(){
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  osc = audioCtx.createOscillator();
+  gain = audioCtx.createGain();
+  filter = audioCtx.createBiquadFilter();
+
+  osc.type = "sawtooth";
+  filter.type = "lowpass";
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  gain.gain.value = 0;
+  osc.start();
+
+  requestAnimationFrame(loop);
+}
+
+function loop(){
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video,0,0);
+
+  const frame = ctx.getImageData(0,0,canvas.width,canvas.height);
+
+  if(lastFrame){
+    let diff = 0;
+    for(let i=0;i<frame.data.length;i+=4){
+      diff += Math.abs(frame.data[i] - lastFrame.data[i]);
+    }
+
+    let motion = diff / 500000;
+    motion = Math.min(motion,1);
+
+    const freq = 120 + motion * 600;
+    const cutoff = 400 + motion * 3000;
+
+    osc.frequency.setTargetAtTime(freq,audioCtx.currentTime,0.05);
+    filter.frequency.setTargetAtTime(cutoff,audioCtx.currentTime,0.05);
+    gain.gain.setTargetAtTime(0.05 + motion*0.2,audioCtx.currentTime,0.05);
+  }
+
+  lastFrame = frame;
+  requestAnimationFrame(loop);
+}
+</script>
+
+</body>
+</html>
