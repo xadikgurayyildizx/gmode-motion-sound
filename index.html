@@ -1,114 +1,177 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>G-MODE Hareket → Ses</title>
-<style>
-  html,body{margin:0;padding:0;background:#000;color:#0f0;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
-  #ui{
-    position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
-    display:flex;gap:10px;align-items:center;
-    background:rgba(0,0,0,0.75);padding:10px 12px;border-radius:12px
-  }
-  #ui button{
-    background:#0f0;color:#000;border:0;border-radius:10px;
-    padding:10px 12px;font-weight:700
-  }
-  #ui span{font-size:12px;opacity:.9}
-  video,canvas{display:none}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>G-MODE Motion → Sound</title>
+  <style>
+    html, body{
+      margin:0; padding:0;
+      background:#000; color:#0f0;
+      font-family: Arial, Helvetica, sans-serif;
+      overflow:hidden;
+    }
+    #ui{
+      position:fixed;
+      left:50%;
+      bottom:12px;
+      transform:translateX(-50%);
+      background:rgba(0,0,0,0.75);
+      border:1px solid rgba(0,255,0,0.25);
+      padding:10px 12px;
+      border-radius:14px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      user-select:none;
+    }
+    #hint{
+      font-size:14px;
+      opacity:0.95;
+      white-space:nowrap;
+    }
+    button{
+      background:#0b0;
+      color:#000;
+      border:none;
+      padding:10px 12px;
+      border-radius:12px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    button.secondary{
+      background:transparent;
+      color:#0f0;
+      border:1px solid rgba(0,255,0,0.5);
+      font-weight:700;
+    }
+    video, canvas{ display:none; }
+  </style>
 </head>
 <body>
 
-<div id="ui">
-  <button id="startBtn">START SOUND</button>
-  <span>Kamera + elini hareket ettir</span>
-</div>
+  <div id="ui">
+    <div id="hint">Ekrana 1 kez dokun → Ellerini hareket ettir</div>
+    <button id="recBtn" class="secondary">REC 15s</button>
+    <button id="payBtn">UNLOCK ₺149</button>
+  </div>
 
-<video id="video" autoplay playsinline></video>
-<canvas id="c"></canvas>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="c"></canvas>
 
-<script>
-const video = document.getElementById("video");
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const hint = document.getElementById("hint");
+    const recBtn = document.getElementById("recBtn");
+    const payBtn = document.getElementById("payBtn");
 
-let audioCtx, osc, gain, filter;
-let lastFrame = null;
-let started = false;
+    let audioCtx, osc, gain, filter;
+    let lastFrame = null;
 
-async function startCamera(){
-  const stream = await navigator.mediaDevices.getUserMedia({ video:true });
-  video.srcObject = stream;
-}
+    // 1-TIK: mobilde sesi garanti başlat
+    document.body.addEventListener("touchstart", () => {
+      if (!window._started) {
+        window._started = true;
+        startAudio();
+        hint.textContent = "Ses açık ✅ Hareket ettir → Ses değişsin";
+      }
+    }, { once: true });
 
-function startAudio(){
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Kamera
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => { video.srcObject = stream; })
+      .catch(() => { hint.textContent = "Kamera izni ver (Allow)"; });
 
-  osc = audioCtx.createOscillator();
-  gain = audioCtx.createGain();
-  filter = audioCtx.createBiquadFilter();
+    function startAudio(){
+      if (audioCtx) return;
 
-  osc.type = "sawtooth";
-  filter.type = "lowpass";
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      osc = audioCtx.createOscillator();
+      gain = audioCtx.createGain();
+      filter = audioCtx.createBiquadFilter();
 
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(audioCtx.destination);
+      osc.type = "sawtooth";
+      filter.type = "lowpass";
 
-  gain.gain.value = 0;
-  osc.start();
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
 
-  requestAnimationFrame(loop);
-}
+      gain.gain.value = 0.0;
+      osc.start();
 
-function loop(){
-  if (!video.videoWidth || !video.videoHeight){
-    requestAnimationFrame(loop);
-    return;
-  }
-
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.drawImage(video,0,0);
-
-  const frame = ctx.getImageData(0,0,canvas.width,canvas.height);
-
-  if(lastFrame){
-    let diff = 0;
-    for(let i=0;i<frame.data.length;i+=4){
-      diff += Math.abs(frame.data[i] - lastFrame.data[i]);
+      requestAnimationFrame(loop);
     }
 
-    let motion = diff / 500000;
-    if (motion > 1) motion = 1;
+    function loop(){
+      if (video.videoWidth && video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
 
-    const freq = 120 + motion * 600;
-    const cutoff = 400 + motion * 3000;
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-    osc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
-    filter.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, 0.05);
-    gain.gain.setTargetAtTime(0.05 + motion*0.2, audioCtx.currentTime, 0.05);
-  }
+        if (lastFrame) {
+          let diff = 0;
+          for (let i = 0; i < frame.data.length; i += 4) {
+            diff += Math.abs(frame.data[i] - lastFrame.data[i]);
+          }
 
-  lastFrame = frame;
-  requestAnimationFrame(loop);
-}
+          let motion = diff / 500000;
+          motion = Math.min(Math.max(motion, 0), 1);
 
-document.getElementById("startBtn").addEventListener("click", async () => {
-  if (started) return;
-  started = true;
-  try{
-    await startCamera();
-    startAudio();
-    document.getElementById("startBtn").textContent = "SOUND ON";
-  }catch(e){
-    document.getElementById("startBtn").textContent = "KAMERA İZNİ?";
-    started = false;
-  }
-});
-</script>
+          const freq = 120 + motion * 600;
+          const cutoff = 400 + motion * 3000;
+
+          osc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+          filter.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, 0.05);
+          gain.gain.setTargetAtTime(0.05 + motion * 0.2, audioCtx.currentTime, 0.05);
+        }
+
+        lastFrame = frame;
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    // KAYIT: 15 saniye indir (audio/webm)
+    let mediaRecorder, chunks = [];
+
+    recBtn.addEventListener("click", () => {
+      if (!audioCtx) { hint.textContent = "Önce ekrana 1 kez dokun (ses aç)"; return; }
+
+      const dest = audioCtx.createMediaStreamDestination();
+      gain.connect(dest);
+
+      mediaRecorder = new MediaRecorder(dest.stream);
+      chunks = [];
+
+      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "gmode-motion.webm";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        hint.textContent = "Kayıt indi ✅";
+      };
+
+      hint.textContent = "Kayıt başladı… 15s";
+      mediaRecorder.start();
+      setTimeout(() => mediaRecorder.stop(), 15000);
+    });
+
+    // PARA: Stripe linkini buraya koy
+    payBtn.addEventListener("click", () => {
+      // Burayı kendi Stripe Payment Link'in ile değiştir:
+      // örn: https://buy.stripe.com/xxxxxx
+      window.location.href = "https://buy.stripe.com/TEST_LINK";
+    });
+  </script>
 
 </body>
 </html>
